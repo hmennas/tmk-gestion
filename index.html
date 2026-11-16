@@ -231,17 +231,25 @@ function options(items,placeholder){return `<option value="">${placeholder}</opt
 function setDateForms(){document.querySelectorAll('input[type=date]').forEach(x=>{if(!x.value)x.value=today()})}
 function addRow(type,obj){obj.id=id();db[type].push(obj);save()}
 document.getElementById('nav').addEventListener('click',e=>{let b=e.target.closest('button[data-tab]');if(!b)return;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.section').forEach(x=>x.classList.toggle('active',x.id===b.dataset.tab));});
-document.getElementById('productForm').onsubmit=e=>{e.preventDefault();let x=formData(e.target);addRow('products',{...x,sellPrice:+x.sellPrice,alert:+x.alert});e.target.reset()};
-document.getElementById('customerForm').onsubmit=e=>{e.preventDefault();addRow('customers',formData(e.target));e.target.reset()};
-document.getElementById('supplierForm').onsubmit=e=>{e.preventDefault();addRow('suppliers',formData(e.target));e.target.reset()};
+function norm(v){return String(v||'').trim().toLocaleLowerCase('ar').replace(/\s+/g,' ')}
+function duplicate(type,x,excludeId=''){
+ const list=db[type].filter(z=>z.id!==excludeId),name=norm(x.name),phone=String(x.phone||'').replace(/\D/g,''),sku=norm(x.sku);
+ if(list.some(z=>norm(z.name)===name))return 'يوجد سجل بالاسم نفسه بالفعل.';
+ if(phone && list.some(z=>String(z.phone||'').replace(/\D/g,'')===phone))return 'رقم الهاتف مسجل مسبقاً.';
+ if(type==='products' && sku && list.some(z=>norm(z.sku)===sku))return 'رمز السلعة مسجل مسبقاً.';
+ return '';
+}
+document.getElementById('productForm').onsubmit=e=>{e.preventDefault();let x=formData(e.target),msg=duplicate('products',x);if(msg){alert(msg+' ابحث عن السجل الموجود وعدّله بدلاً من تكراره.');return}addRow('products',{...x,sellPrice:+x.sellPrice,alert:+x.alert});e.target.reset()};
+document.getElementById('customerForm').onsubmit=e=>{e.preventDefault();let x=formData(e.target),msg=duplicate('customers',x);if(msg){alert(msg+' ابحث عن الزبون الموجود وعدّل بياناته.');return}addRow('customers',x);e.target.reset()};
+document.getElementById('supplierForm').onsubmit=e=>{e.preventDefault();let x=formData(e.target),msg=duplicate('suppliers',x);if(msg){alert(msg+' ابحث عن المورد الموجود وعدّل بياناته.');return}addRow('suppliers',x);e.target.reset()};
 document.getElementById('buyForm').onsubmit=e=>{e.preventDefault();let x=formData(e.target),qty=+x.qty,cost=+x.cost,paid=+x.paid;if(paid>qty*cost){alert('المبلغ المدفوع أكبر من إجمالي الشراء');return}let obj={...x,qty,cost,paid,total:qty*cost};obj.id=id();db.buys.push(obj);if(paid>0)db.payments.push({id:id(),kind:'out',party:obj.party,amount:paid,date:obj.date,note:'دفعة عند الشراء',sourceType:'buy',sourceId:obj.id,isInitial:true});save();e.target.reset();setDateForms()};
 document.getElementById('sellForm').onsubmit=e=>{e.preventDefault();let x=formData(e.target),p=db.products.find(z=>z.id===x.product),qty=+x.qty,price=+x.price,paid=+x.paid;if(!p)return;if(qty>stock(p)){alert('الكمية غير متوفرة في المخزون. المتوفر: '+stock(p));return}if(paid>qty*price){alert('التسبيق أكبر من إجمالي البيع');return}let cost=avgCost(p);if(price<cost&&!confirm('سعر البيع أقل من متوسط تكلفة الشراء. هل تريد المتابعة؟'))return;let obj={...x,qty,price,paid,total:qty*price,unitCost:cost};obj.id=id();db.sells.push(obj);if(paid>0)db.payments.push({id:id(),kind:'in',party:obj.party,amount:paid,date:obj.date,note:'تسبيق عند البيع',sourceType:'sale',sourceId:obj.id,isInitial:true});save();e.target.reset();setDateForms()};
 document.getElementById('paymentForm').onsubmit=e=>{e.preventDefault();let x=formData(e.target);addRow('payments',{...x,amount:+x.amount});e.target.reset();setDateForms()};
 document.getElementById('expenseForm').onsubmit=e=>{e.preventDefault();let x=formData(e.target);addRow('expenses',{...x,amount:+x.amount});e.target.reset();setDateForms()};
 document.getElementById('customerSearch').oninput=renderCustomers;
-function renderProducts(){document.getElementById('productTable').innerHTML=table(['السلعة','المرجع','المخزون','متوسط التكلفة','سعر البيع','تنبيه'],db.products.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.sku)}</td><td>${stock(p)}</td><td>${money(avgCost(p))}</td><td>${money(p.sellPrice)}</td><td>${stock(p)<=p.alert?'<span class="red">مخزون منخفض</span>':'—'}</td></tr>`))}
-function renderCustomers(){let q=(document.getElementById('customerSearch')?.value||'').toLowerCase();document.getElementById('customerTable').innerHTML=table(['الزبون','الهاتف','إجمالي المبيعات','المدفوع','الدين المتبقي','كشف الحساب'],db.customers.filter(c=>(c.name+' '+c.phone).toLowerCase().includes(q)).map(c=>{let sales=sum(db.sells.filter(x=>x.party===c.id),x=>+x.total),paid=sum(db.payments.filter(x=>x.kind==='in'&&x.party===c.id),x=>+x.amount);return `<tr><td>${esc(c.name)}</td><td>${esc(c.phone)}</td><td>${money(sales)}</td><td>${money(paid)}</td><td class="${customerDue(c)>0?'red':'green'}">${money(customerDue(c))}</td><td><button class="btn small" onclick="showStatement('customer','${c.id}')">فتح الكشف</button></td></tr>`}))}
-function renderSuppliers(){document.getElementById('supplierTable').innerHTML=table(['المورد','الهاتف','إجمالي المشتريات','المدفوع','المتبقي عليك','كشف الحساب'],db.suppliers.map(s=>{let buys=sum(db.buys.filter(x=>x.party===s.id),x=>+x.total),paid=sum(db.payments.filter(x=>x.kind==='out'&&x.party===s.id),x=>+x.amount);return `<tr><td>${esc(s.name)}</td><td>${esc(s.phone)}</td><td>${money(buys)}</td><td>${money(paid)}</td><td class="red">${money(supplierDue(s))}</td><td><button class="btn small" onclick="showStatement('supplier','${s.id}')">فتح الكشف</button></td></tr>`}))}
+function renderProducts(){document.getElementById('productTable').innerHTML=table(['السلعة','المرجع','المخزون','متوسط التكلفة','سعر البيع','تنبيه','إدارة'],db.products.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.sku)}</td><td>${stock(p)}</td><td>${money(avgCost(p))}</td><td>${money(p.sellPrice)}</td><td>${stock(p)<=p.alert?'<span class="red">مخزون منخفض</span>':'—'}</td><td><div class="actions"><button class="btn alt small" onclick="editEntity('products','${p.id}')">تعديل</button><button class="btn danger small" onclick="deleteEntity('products','${p.id}')">حذف</button></div></td></tr>`))}
+function renderCustomers(){let q=(document.getElementById('customerSearch')?.value||'').toLowerCase();document.getElementById('customerTable').innerHTML=table(['الزبون','الهاتف','إجمالي المبيعات','المدفوع','الدين المتبقي','إدارة الحساب'],db.customers.filter(c=>(c.name+' '+c.phone).toLowerCase().includes(q)).map(c=>{let sales=sum(db.sells.filter(x=>x.party===c.id),x=>+x.total),paid=sum(db.payments.filter(x=>x.kind==='in'&&x.party===c.id),x=>+x.amount);return `<tr><td>${esc(c.name)}</td><td>${esc(c.phone)}</td><td>${money(sales)}</td><td>${money(paid)}</td><td class="${customerDue(c)>0?'red':'green'}">${money(customerDue(c))}</td><td><div class="actions"><button class="btn small" onclick="showStatement('customer','${c.id}')">كشف الحساب</button><button class="btn alt small" onclick="editEntity('customers','${c.id}')">تعديل</button><button class="btn danger small" onclick="deleteEntity('customers','${c.id}')">حذف</button></div></td></tr>`}))}
+function renderSuppliers(){document.getElementById('supplierTable').innerHTML=table(['المورد','الهاتف','إجمالي المشتريات','المدفوع','المتبقي عليك','إدارة الحساب'],db.suppliers.map(s=>{let buys=sum(db.buys.filter(x=>x.party===s.id),x=>+x.total),paid=sum(db.payments.filter(x=>x.kind==='out'&&x.party===s.id),x=>+x.amount);return `<tr><td>${esc(s.name)}</td><td>${esc(s.phone)}</td><td>${money(buys)}</td><td>${money(paid)}</td><td class="red">${money(supplierDue(s))}</td><td><div class="actions"><button class="btn small" onclick="showStatement('supplier','${s.id}')">كشف الحساب</button><button class="btn alt small" onclick="editEntity('suppliers','${s.id}')">تعديل</button><button class="btn danger small" onclick="deleteEntity('suppliers','${s.id}')">حذف</button></div></td></tr>`}))}
 function renderHistory(type,el,headers,fn){document.getElementById(el).innerHTML=table(headers.concat(['إدارة']),db[type].slice().reverse().map(x=>fn(x).replace('</tr>',`<td><div class="actions"><button class="btn alt small" onclick="editRecord('${type}','${x.id}')">تعديل</button><button class="btn danger small" onclick="deleteRecord('${type}','${x.id}')">حذف</button></div></td></tr>`)))}
 function refreshSelects(){document.querySelector('#buyForm [name=party]').innerHTML=options(db.suppliers,'اختر المورد');document.querySelector('#buyForm [name=product]').innerHTML=options(db.products,'اختر السلعة');document.querySelector('#sellForm [name=party]').innerHTML=options(db.customers,'اختر الزبون');document.querySelector('#sellForm [name=product]').innerHTML=options(db.products,'اختر السلعة');let ps=[...db.customers.map(x=>({...x,kind:'c'})),...db.suppliers.map(x=>({...x,kind:'s'}))];document.querySelector('#paymentForm [name=party]').innerHTML='<option value="">اختر الحساب</option>'+ps.map(x=>`<option value="${x.id}" data-kind="${x.kind}">${x.kind==='c'?'زبون: ':'مورد: '}${esc(x.name)}</option>`).join('');refreshReturnSelect()}
 document.querySelector('#paymentForm [name=kind]').onchange=()=>{let k=document.querySelector('#paymentForm [name=kind]').value,sel=document.querySelector('#paymentForm [name=party]');sel.innerHTML=options(k==='in'?db.customers:db.suppliers,k==='in'?'اختر الزبون':'اختر المورد')};
@@ -295,6 +303,36 @@ function showStatement(kind,partyId){
 }
 function closeStatement(){document.getElementById('statementModal').style.display='none'}
 document.getElementById('statementModal').addEventListener('click',e=>{if(e.target.id==='statementModal')closeStatement()});
+
+function editEntity(type,rid){
+ const x=db[type].find(z=>z.id===rid);if(!x)return;
+ if(type==='products'){
+  const name=prompt('اسم السلعة',x.name);if(name===null)return;
+  const sku=prompt('رمز / مرجع السلعة',x.sku||'');if(sku===null)return;
+  const price=prompt('سعر البيع الافتراضي DH',x.sellPrice);if(price===null)return;
+  const alertQty=prompt('تنبيه المخزون عند الكمية',x.alert??3);if(alertQty===null)return;
+  const next={...x,name:name.trim(),sku:sku.trim(),sellPrice:Number(price),alert:Number(alertQty)};
+  if(!next.name||!Number.isFinite(next.sellPrice)||next.sellPrice<0||!Number.isFinite(next.alert)||next.alert<0){alert('تحقق من الاسم والأسعار والكمية.');return}
+  const msg=duplicate('products',next,rid);if(msg){alert(msg);return}Object.assign(x,next);
+ }else{
+  const name=prompt(type==='customers'?'اسم الزبون':'اسم المورد',x.name);if(name===null)return;
+  const phone=prompt('رقم الهاتف',x.phone||'');if(phone===null)return;
+  const note=prompt('ملاحظة',x.note||'');if(note===null)return;
+  const next={...x,name:name.trim(),phone:phone.trim(),note:note.trim()};
+  if(!next.name){alert('الاسم مطلوب.');return}const msg=duplicate(type,next,rid);if(msg){alert(msg);return}Object.assign(x,next);
+ }
+ save();alert('تم تحديث السجل بنجاح، مع الحفاظ على الحركات والحسابات المرتبطة به.');
+}
+function deleteEntity(type,rid){
+ const x=db[type].find(z=>z.id===rid);if(!x)return;
+ let used=false,reason='';
+ if(type==='products'){used=db.buys.some(z=>z.product===rid)||db.sells.some(z=>z.product===rid)||db.returns.some(z=>z.product===rid);reason='هذه السلعة مرتبطة بمبيعات أو مشتريات أو مرتجعات.'}
+ if(type==='customers'){used=db.sells.some(z=>z.party===rid)||db.payments.some(z=>z.kind==='in'&&z.party===rid)||db.returns.some(z=>z.kind==='customer'&&z.party===rid);reason='هذا الزبون لديه حركات أو دفعات مسجلة.'}
+ if(type==='suppliers'){used=db.buys.some(z=>z.party===rid)||db.payments.some(z=>z.kind==='out'&&z.party===rid)||db.returns.some(z=>z.kind==='supplier'&&z.party===rid);reason='هذا المورد لديه حركات أو دفعات مسجلة.'}
+ if(used){alert('لا يمكن حذف «'+x.name+'» لأن '+reason+' حفاظاً على صحة الديون والمخزون وكشوف الحساب. يمكنك تعديل الاسم أو البيانات بدلاً من ذلك.');return}
+ if(!confirm('هل تريد حذف «'+x.name+'» نهائياً؟ لا يمكن التراجع عن هذا الحذف.'))return;
+ db[type]=db[type].filter(z=>z.id!==rid);save();
+}
 
 function deleteRecord(type,rid){if(!confirm('حذف هذه الحركة؟ سيتم تحديث الحساب والمخزون تلقائياً.'))return;
  if(type==='sells'||type==='buys')db.payments=db.payments.filter(p=>p.sourceId!==rid);
